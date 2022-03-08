@@ -1,5 +1,5 @@
-# The SUSE Billboard for Matrix Portal
-This is a simple application which will display a choice of text or images on the Adafruit Matrix Portal 32x64 display
+# A Billboard for Matrix Portal 
+This is a simple application which will display a choice of text or images on the Adafruit Matrix Portal 32x64 display. It sets up the Matrix Portal as an Access Point (AP) such that it can receive billboard content from a connected Station (Client)
 
 ## Code
 
@@ -8,18 +8,33 @@ This is a simple application which will display a choice of text or images on th
     - Libraries included here are used to simplify the time to get up and running 
     - [Get the latest libraries](https://learn.adafruit.com/welcome-to-circuitpython/circuitpython-libraries)
 * `code.py` - the application code which parses and displays the content
-* `content.json` 
-    - The content which will get displayed on the matrix portal.
-    - See the section [Content Layout](#Content Layout) below for details
-* `secrets.py` - contains secrets like a wifi SSID and passphrase
+* `secrets.py` - contains secrets which will be loaded at boot time
+* `content.json` - this (optional) file can contain a set of possible content to be displayed on the billboard. 
 
 ## Quick Start
 1. [Prepare the MatrixPortal](https://learn.adafruit.com/matrix-portal-new-guide-scroller/prep-the-matrixportal)
 1. [Install CircuitPython](https://learn.adafruit.com/matrix-portal-new-guide-scroller/install-circuitpython)
-1. **(Optional)** Create a `secrets.py` file with your WiFi SSID and passphrase
 1. Copy all files from this repo into the `CIRCUITPY` directory that was mounted when you installed CircuitPython
 1. Power up
-1. Click up/down buttons to switch content
+1. Connect to the AP with a client (using SSID and Passphrase set in secrets)
+1. Send content from the client
+
+
+## Displaying content
+
+Content can be displayed from the content.json file (hosted) on the Matrix Portal or dynamically (posted). The up/down buttons on the Matrix Portal can be used to switch to and display the next set of content on the device. 
+
+### Hosted Example
+
+* Display the next billboard hosted on the device:
+* `curl -X GET http://192.168.4.1/next`
+
+### Posted Example
+
+* Display the message "Hello Billboard" in yellow text against a purple background:
+* `curl -X POST http://192.168.4.1 -H 'Content-Type: application/json' -d '{"default": {"text": "Hello\nBillboard", "fg": "0xFFD700", "bg": "0x6C0BA9}}'`
+
+
 
 ## Content Layout
 The `content.json` file contains a list of content which can be cycled through on the Matrix Portal. Content could be text or bitmap images. Or a combination of both. Text can be scrolled orizontally and colors can be set for the foreground and background. The content file must be json formatted.
