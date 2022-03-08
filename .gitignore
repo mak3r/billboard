@@ -1,2 +1,4 @@
 .DS_Store
 secrets.py
+*.uf2
+/CIRCUITPY

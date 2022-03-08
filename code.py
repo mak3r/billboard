@@ -7,10 +7,11 @@ import displayio
 import terminalio
 import digitalio
 import adafruit_esp32spi.adafruit_esp32spi_socket as socket
+import adafruit_esp32spi.adafruit_esp32spi_wsgiserver as server
 import adafruit_requests as requests
 from adafruit_matrixportal.matrixportal import MatrixPortal
-from adafruit_matrixportal.network import Network
-
+from adafruit_wsgi.wsgi_app import WSGIApp
+#from adafruit_matrixportal.network import Network
 
 try:
     from secrets import secrets
@@ -22,12 +23,31 @@ displayio.release_displays()
 
 # --- Display setup ---
 matrixportal = MatrixPortal(status_neopixel=board.NEOPIXEL, debug=False, bit_depth=5)
-#network = matrixportal.network
+network = matrixportal.network
 #network.connect()
 
 # Initialize a requests object with a socket and esp32spi interface
 #socket.set_interface(network._wifi.esp)
 #requests.set_socket(socket, network._wifi.esp)
+
+esp = network._wifi.esp
+network._wifi.esp.reset()
+# SSID, passphrase, channel
+network._wifi.esp.create_AP(secrets['ssid'],secrets['password'],secrets['channel'])
+print ('AP Created ')
+ip = network._wifi.esp.ip_address
+print('gateway ip: {}.{}.{}.{}'.format(ip[0],ip[1],ip[2],ip[3]))
+
+web_app = WSGIApp()
+
+@web_app.route("/")
+def simple_app(request): 
+    return ['200 OK', [], 'Hello world!\n']
+
+server.set_interface(esp)
+wsgiServer = server.WSGIServer(80, application=web_app)
+wsgiServer.start()
+
 
 class Billboard:
 
@@ -191,6 +211,7 @@ def display_change():
 
 do_scroll = time.monotonic() + billboard.scroll_rate
 while True:
+    wsgiServer.update_poll()
     display_change()
     if billboard.SCROLLING == True:
         if time.monotonic() > do_scroll:
