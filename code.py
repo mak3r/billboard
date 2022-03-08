@@ -44,6 +44,21 @@ web_app = WSGIApp()
 def simple_app(request): 
     return ['200 OK', [], 'Hello world!\n']
 
+@web_app.route("/text/<text>/<fg>/<bg>")
+def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
+    print("text received")
+    #TODO: create content method that will return json formatted data
+    # which the controller can parse
+    c = parse_content(text,fg,bg)
+    return ("200 OK", [], json.dumps(c))
+
+
+def parse_content(text=None,fg=None,bg=None,*):
+    if text is None or fg is None or bg is None:
+        content = "{}"#default_content
+    content = '{' + '"text": "' + text + '", ' + '"fg": "' +   fg + '", ' + '"bg": "' +   bg + '"}'
+    return json.loads(content)
+
 server.set_interface(esp)
 wsgiServer = server.WSGIServer(80, application=web_app)
 wsgiServer.start()
