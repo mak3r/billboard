@@ -24,11 +24,6 @@ displayio.release_displays()
 # --- Display setup ---
 matrixportal = MatrixPortal(status_neopixel=board.NEOPIXEL, debug=False, bit_depth=5)
 network = matrixportal.network
-#network.connect()
-
-# Initialize a requests object with a socket and esp32spi interface
-#socket.set_interface(network._wifi.esp)
-#requests.set_socket(socket, network._wifi.esp)
 
 esp = network._wifi.esp
 network._wifi.esp.reset()
@@ -47,11 +42,15 @@ def simple_app(request):
 @web_app.route("/text/<text>/<fg>/<bg>")
 def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
     print("text received")
-    #TODO: create content method that will return json formatted data
-    # which the controller can parse
     c = parse_content(text,fg,bg)
     return ("200 OK", ["POST"], json.dumps(c))
 
+@web_app.route("/next")
+def plain_text(request):  # pylint: disable=unused-argument
+    print("next screen")
+    c = billboard.next()
+    print("content:", c)
+    return ("200 OK", [], json.dumps(c))
 
 def parse_content(text=None,fg=None,bg=None,*):
     if text is None or fg is None or bg is None:
@@ -115,6 +114,7 @@ class Billboard:
                 self.keys_index = 0
         self.item = self.content[self.keys[self.keys_index]]
         self.__display__(self.keys[self.keys_index], self.item)
+        return self.item
 
     def prev(self):
         if len(self.keys) > 0:
@@ -124,6 +124,7 @@ class Billboard:
                 self.keys_index -= 1
         self.item = self.content[self.keys[self.keys_index]]
         self.__display__(self.keys[self.keys_index], self.item)
+        return self.item
         
     def __display__(self, key, item):
         print("key {}, item: {}".format(key,item))
