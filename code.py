@@ -50,13 +50,18 @@ def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
     #TODO: create content method that will return json formatted data
     # which the controller can parse
     c = parse_content(text,fg,bg)
-    return ("200 OK", [], json.dumps(c))
+    return ("200 OK", ["POST"], json.dumps(c))
 
 
 def parse_content(text=None,fg=None,bg=None,*):
     if text is None or fg is None or bg is None:
         content = "{}"#default_content
-    content = '{' + '"text": "' + text + '", ' + '"fg": "' +   fg + '", ' + '"bg": "' +   bg + '"}'
+    content = (
+        '{' + 
+        '"text": "' + text + '", ' + 
+        '"fg": "' +   fg + '", ' + 
+        '"bg": "' +   bg + 
+        '"}')
     return json.loads(content)
 
 server.set_interface(esp)
@@ -70,7 +75,7 @@ class Billboard:
     item = "NO ITEMS"
     keys_index = 0
     keys = []
-    display_types = ["img", "url", "text", "stext"]
+    display_types = ["img", "text", "stext"]
     scroll_rate = .1
     SCROLLING = False
     text_index = None
@@ -130,21 +135,19 @@ class Billboard:
                 if k == "text":
                     self.load_text(
                         item[k], 
-                        text_color=item['fg_color'], 
+                        text_color=item['fg'], 
                         bg=self.parse_bg(item['bg'])
                     )
                 if k == "stext":
                     self.scroll_rate = float(item['rate'] if "rate" in item.keys() else .1)
                     self.load_stext(
                         item[k], 
-                        text_color=item['fg_color'], 
+                        text_color=item['fg'], 
                         bg=self.parse_bg(item['bg'])
                     )
                     self.SCROLLING = True
                 elif k == "img":
                     self.load_image(item[k])
-                elif k == "url":
-                    self.load_from_url(item[k])
 
     def parse_bg(self, bg):
         if bg.startswith("0x"):
@@ -161,28 +164,6 @@ class Billboard:
 
     def load_image(self, bmp):
         matrixportal.set_background(bmp)
-
-    def load_from_url(self, url):        
-        # Define a custom header as a dict.
-        headers = {
-            "user-agent": "matrix-portal/1.0.0", 
-        }
-
-        try:
-            response = requests.get(url, headers=headers)
-        except:
-            print("Unable to get url {}".format(url))
-            return False
-
-        data = response.text
-        url_content = json.loads(data)
-        if "url" in url_content.keys():
-            raise ValueError("url type cannot reference another url - to avoid infinite recursion issues")
-        item = url_content.popitem()
-        self.__display__(item[0], item[1])
-        response.close()
-        return True
-
 
     def load_text(self, msg, *, text_color="0x000000", bg="0x10BA08"):
         matrixportal.set_background(bg)
