@@ -1,7 +1,6 @@
 
 import time
 import board
-import busio
 import json
 import displayio
 import terminalio
@@ -11,7 +10,6 @@ import adafruit_esp32spi.adafruit_esp32spi_wsgiserver as server
 import adafruit_requests as requests
 from adafruit_matrixportal.matrixportal import MatrixPortal
 from adafruit_wsgi.wsgi_app import WSGIApp
-#from adafruit_matrixportal.network import Network
 
 try:
     from secrets import secrets
@@ -33,48 +31,6 @@ print ('AP Created ')
 ip = esp.ip_address
 print('gateway ip: {}.{}.{}.{}'.format(ip[0],ip[1],ip[2],ip[3]))
 
-web_app = WSGIApp()
-
-@web_app.route("/")
-def simple_app(request): 
-    return ['200 OK', [], 'Hello world!\n']
-
-@web_app.route("/text/<text>/<fg>/<bg>")
-def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
-    print("text received")
-    c = parse_content(text,fg,bg)
-    return ("200 OK", ["POST"], json.dumps(c))
-
-@web_app.route("/next")
-def plain_text(request):  # pylint: disable=unused-argument
-    print("next screen")
-    d = billboard.next()
-    print("d: {}".format(d))
-    return ("200 OK", [], json.dumps(d))
-
-@web_app.route("/prev")
-def plain_text(request):  # pylint: disable=unused-argument
-    print("prev screen")
-    d = billboard.prev()
-    print("d: {}".format(d))
-    return ("200 OK", [], json.dumps(d))
-
-def parse_content(text=None,fg=None,bg=None,*):
-    if text is None or fg is None or bg is None:
-        content = "{}"#default_content
-    content = (
-        '{' + 
-        '"text": "' + text + '", ' + 
-        '"fg": "' +   fg + '", ' + 
-        '"bg": "' +   bg + 
-        '"}')
-    return json.loads(content)
-
-server.set_interface(esp)
-wsgiServer = server.WSGIServer(80, application=web_app)
-wsgiServer.start()
-
-
 class Billboard:
 
     content = ""
@@ -86,6 +42,7 @@ class Billboard:
     SCROLLING = False
     text_index = None
     stext_index = None
+    cur = None
 
     def __init__(self, filename):
         matrixportal.display.auto_refresh = True
@@ -119,6 +76,7 @@ class Billboard:
                 self.keys_index += 1
             else:
                 self.keys_index = 0
+        self.cur = self.keys_index
         self.item = self.content[self.keys[self.keys_index]]
         self.__display__(self.keys[self.keys_index], self.item)
         return {self.keys[self.keys_index]: self.item}
@@ -129,6 +87,7 @@ class Billboard:
                 self.keys_index = len(self.keys) - 1
             else:
                 self.keys_index -= 1
+        self.cur = self.keys_index
         self.item = self.content[self.keys[self.keys_index]]
         self.__display__(self.keys[self.keys_index], self.item)
         return {self.keys[self.keys_index]: self.item}
@@ -185,6 +144,48 @@ class Billboard:
 
 # Setup the billboard
 billboard = Billboard('content.json')
+
+web_app = WSGIApp()
+
+@web_app.route("/")
+def simple_app(request): 
+    c = billboard.content[billboard.keys[billboard.cur]]
+    return ['200 OK', [], json.dumps(c)]
+
+@web_app.route("/text/<text>/<fg>/<bg>")
+def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
+    print("text received")
+    c = parse_content(text,fg,bg)
+    return ("200 OK", ["POST"], json.dumps(c))
+
+@web_app.route("/next")
+def plain_text(request):  # pylint: disable=unused-argument
+    print("next screen")
+    d = billboard.next()
+    print("d: {}".format(d))
+    return ("200 OK", [], json.dumps(d))
+
+@web_app.route("/prev")
+def plain_text(request):  # pylint: disable=unused-argument
+    print("prev screen")
+    d = billboard.prev()
+    print("d: {}".format(d))
+    return ("200 OK", [], json.dumps(d))
+
+def parse_content(text=None,fg=None,bg=None,*):
+    if text is None or fg is None or bg is None:
+        content = "{}"#default_content
+    content = (
+        '{' + 
+        '"text": "' + text + '", ' + 
+        '"fg": "' +   fg + '", ' + 
+        '"bg": "' +   bg + 
+        '"}')
+    return json.loads(content)
+
+server.set_interface(esp)
+wsgiServer = server.WSGIServer(80, application=web_app)
+wsgiServer.start()
 
 # Matrix Portal Button Responders
 up_btn = digitalio.DigitalInOut(board.BUTTON_UP)
