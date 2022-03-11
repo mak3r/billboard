@@ -26,11 +26,11 @@ matrixportal = MatrixPortal(status_neopixel=board.NEOPIXEL, debug=False, bit_dep
 network = matrixportal.network
 
 esp = network._wifi.esp
-network._wifi.esp.reset()
+esp.reset()
 # SSID, passphrase, channel
-network._wifi.esp.create_AP(secrets['ssid'],secrets['password'],secrets['channel'])
+esp.create_AP(secrets['ssid'],secrets['password'],secrets['channel'])
 print ('AP Created ')
-ip = network._wifi.esp.ip_address
+ip = esp.ip_address
 print('gateway ip: {}.{}.{}.{}'.format(ip[0],ip[1],ip[2],ip[3]))
 
 web_app = WSGIApp()
@@ -48,9 +48,16 @@ def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
 @web_app.route("/next")
 def plain_text(request):  # pylint: disable=unused-argument
     print("next screen")
-    c = billboard.next()
-    print("content:", c)
-    return ("200 OK", [], json.dumps(c))
+    d = billboard.next()
+    print("d: {}".format(d))
+    return ("200 OK", [], json.dumps(d))
+
+@web_app.route("/prev")
+def plain_text(request):  # pylint: disable=unused-argument
+    print("prev screen")
+    d = billboard.prev()
+    print("d: {}".format(d))
+    return ("200 OK", [], json.dumps(d))
 
 def parse_content(text=None,fg=None,bg=None,*):
     if text is None or fg is None or bg is None:
@@ -114,7 +121,7 @@ class Billboard:
                 self.keys_index = 0
         self.item = self.content[self.keys[self.keys_index]]
         self.__display__(self.keys[self.keys_index], self.item)
-        return self.item
+        return {self.keys[self.keys_index]: self.item}
 
     def prev(self):
         if len(self.keys) > 0:
@@ -124,7 +131,7 @@ class Billboard:
                 self.keys_index -= 1
         self.item = self.content[self.keys[self.keys_index]]
         self.__display__(self.keys[self.keys_index], self.item)
-        return self.item
+        return {self.keys[self.keys_index]: self.item}
         
     def __display__(self, key, item):
         print("key {}, item: {}".format(key,item))
@@ -208,7 +215,11 @@ def display_change():
 
 do_scroll = time.monotonic() + billboard.scroll_rate
 while True:
-    wsgiServer.update_poll()
+    try:
+        wsgiServer.update_poll()
+    except (ValueError, RuntimeError) as e:
+        print("Failed to update, retrying\n", e)
+        continue
     display_change()
     if billboard.SCROLLING == True:
         if time.monotonic() > do_scroll:
