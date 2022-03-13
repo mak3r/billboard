@@ -149,7 +149,7 @@ web_app = WSGIApp()
 
 @web_app.route("/")
 def simple_app(request): 
-    c = billboard.content[billboard.keys[billboard.cur]]
+    c = {billboard.cur: billboard.content[billboard.keys[billboard.cur]]}
     return ['200 OK', [], json.dumps(c)]
 
 @web_app.route("/text/<text>/<fg>/<bg>")
