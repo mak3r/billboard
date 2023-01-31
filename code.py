@@ -5,11 +5,15 @@ import json
 import displayio
 import terminalio
 import digitalio
-import adafruit_esp32spi.adafruit_esp32spi_socket as socket
-import adafruit_esp32spi.adafruit_esp32spi_wsgiserver as server
-import adafruit_requests as requests
-from adafruit_matrixportal.matrixportal import MatrixPortal
-from adafruit_wsgi.wsgi_app import WSGIApp
+import rgbmatrix
+import framebufferio
+
+from adafruit_display_text.label import Label
+
+from adafruit_ble import BLERadio
+from adafruit_ble.advertising.standard import ProvideServicesAdvertisement
+from adafruit_ble.services.nordic import UARTService
+from adafruit_airlift.esp32 import ESP32
 
 try:
     from secrets import secrets
@@ -17,19 +21,38 @@ except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
 
-displayio.release_displays()
-
 # --- Display setup ---
-matrixportal = MatrixPortal(status_neopixel=board.NEOPIXEL, debug=False, bit_depth=5)
-network = matrixportal.network
+displayio.release_displays()
+matrix = rgbmatrix.RGBMatrix(
+    width=64, bit_depth=4,
+    rgb_pins=[
+        board.MTX_R1,
+        board.MTX_G1,
+        board.MTX_B1,
+        board.MTX_R2,
+        board.MTX_G2,
+        board.MTX_B2
+    ],
+    addr_pins=[
+        board.MTX_ADDRA,
+        board.MTX_ADDRB,
+        board.MTX_ADDRC,
+        board.MTX_ADDRD
+    ],
+    clock_pin=board.MTX_CLK,
+    latch_pin=board.MTX_LAT,
+    output_enable_pin=board.MTX_OE
+)
+display = framebufferio.FramebufferDisplay(matrix)
 
-esp = network._wifi.esp
-esp.reset()
-# SSID, passphrase, channel
-esp.create_AP(secrets['ssid'],secrets['password'],secrets['channel'])
-print ('AP Created ')
-ip = esp.ip_address
-print('gateway ip: {}.{}.{}.{}'.format(ip[0],ip[1],ip[2],ip[3]))
+
+esp32 = ESP32()
+
+adapter = esp32.start_bluetooth()
+
+ble = BLERadio(adapter)
+uart = UARTService()
+advertisement = ProvideServicesAdvertisement(uart)
 
 class Billboard:
 
@@ -40,12 +63,12 @@ class Billboard:
     display_types = ["img", "text", "stext"]
     scroll_rate = .1
     SCROLLING = False
-    text_index = None
-    stext_index = None
     cur = None
+    group = displayio.Group()
+    medium_font = "fonts/IBMPlexMono-Medium-24_jep.bdf"
 
     def __init__(self, filename):
-        matrixportal.display.auto_refresh = True
+        display.auto_refresh = True
         with open(filename, 'r') as c:
             self.content = json.load(c)
         
@@ -54,21 +77,25 @@ class Billboard:
 
         print("Content for display: ", self.content)
 
-        self.text_index = matrixportal.add_text(
-            text_font=terminalio.FONT, #"fonts/Arial-12.bdf", #
-            text_position=((matrixportal.graphics.display.width // 2), (matrixportal.graphics.display.height // 2) - 1),
-            scrolling=False,
-            text_anchor_point=(.5,.5) # This centers the text (approximately)
-        )
-
-        self.stext_index = matrixportal.add_text(
-            text_font="fonts/IBMPlexMono-Medium-24_jep.bdf", 
-            text_position=((matrixportal.graphics.display.width // 2), (matrixportal.graphics.display.height // 2) - 1),
-            scrolling=True,
-        )
         #Show the first item
         self.next()
 
+    def add_label(self, text="", bg=0x000000, fg=0x10BA08):
+        label = Label(
+            font=terminalio.FONT,
+            text = text,
+            color = fg,
+            background_color = bg,
+            line_spacing = .8,
+            anchored_position = (display.width/2, display.height/2),
+            anchor_point = (.5,.6)
+        )
+        self.group.append(label)
+
+    def add_image(self, bmp):
+        odb = displayio.OnDiskBitmap(bmp)
+        tg = displayio.TileGrid(odb, pixel_shader=odb.pixel_shader)
+        self.group.append(tg)
 
     def next(self):
         if len(self.keys) > 0:
@@ -100,77 +127,55 @@ class Billboard:
         for k in item.keys():
             if k in self.display_types:
                 if k == "text":
-                    self.load_text(
+                    self.add_label(
                         item[k], 
-                        text_color=item['fg'], 
-                        bg=self.parse_bg(item['bg'])
+                        fg=self.parse_color(item['fg']), 
+                        bg=self.parse_color(item['bg'])
                     )
                 if k == "stext":
                     self.scroll_rate = float(item['rate'] if "rate" in item.keys() else .1)
-                    self.load_stext(
+                    self.add_label(
                         item[k], 
-                        text_color=item['fg'], 
-                        bg=self.parse_bg(item['bg'])
+                        fg=self.parse_color(item['fg']), 
+                        bg=self.parse_color(item['bg'])
                     )
                     self.SCROLLING = True
                 elif k == "img":
-                    self.load_image(item[k])
+                    self.add_image(item[k])
 
-    def parse_bg(self, bg):
-        if bg.startswith("0x"):
-            return int(bg,16)
-        elif bg[-4:] == ".bmp":
-            return bg
+    def parse_color(self, color):
+        if color.startswith("0x"):
+            return int(color,16)
+        elif color[-4:] == ".bmp":
+            return color
         else:
-            return matrixportal.default_bg
+            return 0x000000
 
     def clear(self):
-        self.load_text("", text_color="0x000000", bg=0)
-        self.load_stext("", text_color="0x000000", bg=0)
+        while len(self.group) > 0:
+            del self.group[0]
 
-
-    def load_image(self, bmp):
-        matrixportal.set_background(bmp)
-
-    def load_text(self, msg, *, text_color="0x000000", bg="0x10BA08"):
-        matrixportal.set_background(bg)
-        matrixportal.set_text(msg, self.text_index)
-        matrixportal.set_text_color(int(text_color,16), 0)
-
-    def load_stext(self, msg, *, text_color="0x000000", bg="0x10BA08"):
-        matrixportal.set_background(bg)
-        matrixportal.set_text(msg, self.stext_index)
-        matrixportal.set_text_color(int(text_color,16), 1)
 
 # Setup the billboard
 billboard = Billboard('content.json')
 
-web_app = WSGIApp()
 
-@web_app.route("/")
-def simple_app(request): 
+def get_cur(): 
     c = {billboard.cur: billboard.content[billboard.keys[billboard.cur]]}
-    return ['200 OK', [], json.dumps(c)]
+    return c
 
-@web_app.route("/text/<text>/<fg>/<bg>")
-def plain_text(request, text, fg, bg):  # pylint: disable=unused-argument
+def live_msg(text, fg, bg):  
     print("text received")
-    c = parse_content(text,fg,bg)
-    return ("200 OK", ["POST"], json.dumps(c))
+    return parse_content(text,fg,bg)
 
-@web_app.route("/next")
-def plain_text(request):  # pylint: disable=unused-argument
+def next():  
     print("next screen")
-    d = billboard.next()
-    print("d: {}".format(d))
-    return ("200 OK", [], json.dumps(d))
+    return billboard.next()
 
-@web_app.route("/prev")
-def plain_text(request):  # pylint: disable=unused-argument
+
+def prev():  
     print("prev screen")
-    d = billboard.prev()
-    print("d: {}".format(d))
-    return ("200 OK", [], json.dumps(d))
+    return billboard.prev()
 
 def parse_content(text=None,fg=None,bg=None,*):
     if text is None or fg is None or bg is None:
@@ -183,9 +188,6 @@ def parse_content(text=None,fg=None,bg=None,*):
         '"}')
     return json.loads(content)
 
-server.set_interface(esp)
-wsgiServer = server.WSGIServer(80, application=web_app)
-wsgiServer.start()
 
 # Matrix Portal Button Responders
 up_btn = digitalio.DigitalInOut(board.BUTTON_UP)
@@ -206,23 +208,41 @@ def display_change():
     global debounce_timeout
     if time.monotonic() > cur_debounce:
         if not up_btn.value:
+            print("next ...")
             billboard.next()
 
         if not down_btn.value:
+            print("prev ...")
             billboard.prev()
 
         # reset debounce clock
         cur_debounce = time.monotonic() + debounce_timeout
 
+    display.show(billboard.group)
+
+
 do_scroll = time.monotonic() + billboard.scroll_rate
 while True:
-    try:
-        wsgiServer.update_poll()
-    except (ValueError, RuntimeError) as e:
-        print("Failed to update, retrying\n", e)
-        continue
     display_change()
+    # ble.start_advertising(advertisement)
+    # print("waiting to connect")
+    # while not ble.connected:
+    #     pass
+    # print("connected: trying to read input")
+    # while ble.connected:
+    #     # Returns b'' if nothing was read.
+    #     one_byte = uart.read(1)
+    #     if one_byte:
+    #         #print(one_byte)
+    #         #uart.write(one_byte)
+    #         if one_byte == 'n':
+    #             print(next())
+    #         if one_byte == 'p':
+    #             print(prev())
+    #         display_change()
+    #FIXME: scrolling needs additional logic for functioning 
+    # regardless of whether ble is connected or not
     if billboard.SCROLLING == True:
         if time.monotonic() > do_scroll:
-            matrixportal.scroll()
+            #scroll()
             do_scroll = time.monotonic() + billboard.scroll_rate
