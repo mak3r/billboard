@@ -57,13 +57,13 @@ advertisement = ProvideServicesAdvertisement(uart)
 class Billboard:
 
     content = ""
-    item = "NO ITEMS"
     keys_index = 0
-    keys = []
     display_types = ["img", "text", "stext"]
     scroll_rate = .1
     SCROLLING = False
-    cur = None
+    layers = {} # dictionary of content keys and display groups
+    layer_list = [] # list of layers for navigating prev/next on display
+    cur_layer = 0 # index into layer_list
     group = displayio.Group()
     medium_font = "fonts/IBMPlexMono-Medium-24_jep.bdf"
 
@@ -72,15 +72,20 @@ class Billboard:
         with open(filename, 'r') as c:
             self.content = json.load(c)
         
-        for k in self.content.keys():
-            self.keys.append(k)
+        display_items = list(self.content.keys())
+        print("display items len: ", len(display_items))
+        for item in display_items:
+            self.__add_layer__(item, self.content[item] )
 
+        self.layer_list=list(self.layers.keys())
+        print("Number of display items: ", len(self.layers))
         print("Content for display: ", self.content)
+        print("List of layers: ", self.layer_list)
 
-        #Show the first item
-        self.next()
+        # Initialize the next item to be visible (!group.hidden)
+        print("next billboard: ", self.next())
 
-    def add_label(self, text="", bg=0x000000, fg=0x10BA08):
+    def __make_Label__(self, text="", bg=0x000000, fg=0x10BA08):
         label = Label(
             font=terminalio.FONT,
             text = text,
@@ -90,66 +95,89 @@ class Billboard:
             anchored_position = (display.width/2, display.height/2),
             anchor_point = (.5,.6)
         )
-        self.group.append(label)
+        return label
 
-    def add_image(self, bmp):
+    def __make_TileGroup__(self, bmp):
         odb = displayio.OnDiskBitmap(bmp)
         tg = displayio.TileGrid(odb, pixel_shader=odb.pixel_shader)
-        self.group.append(tg)
+        return tg
+
+    # Create a group with layer 1 = layer
+    def ____make_Group____(self, layer):
+        g = displayio.Group()
+        g.append(layer)
+        g.hidden = False
+        return g
 
     def next(self):
-        if len(self.keys) > 0:
-            if self.keys_index < len(self.keys) - 1:
-                self.keys_index += 1
-            else:
-                self.keys_index = 0
-        self.cur = self.keys_index
-        self.item = self.content[self.keys[self.keys_index]]
-        self.__display__(self.keys[self.keys_index], self.item)
-        return {self.keys[self.keys_index]: self.item}
+        if self.cur_layer < (len(self.layer_list) - 1):
+            self.cur_layer += 1
+        else:
+            self.cur_layer = 0
+        
+        print("Cur layer id: ", self.cur_layer)
+        self.clear()
+        self.group.append(self.layers[self.layer_list[self.cur_layer]])
+        print("Cur layer key: ", self.layer_list[self.cur_layer])
+        return {self.layer_list[self.cur_layer]: self.content[self.layer_list[self.cur_layer]]}
+
 
     def prev(self):
-        if len(self.keys) > 0:
-            if self.keys_index == 0:
-                self.keys_index = len(self.keys) - 1
-            else:
-                self.keys_index -= 1
-        self.cur = self.keys_index
-        self.item = self.content[self.keys[self.keys_index]]
-        self.__display__(self.keys[self.keys_index], self.item)
-        return {self.keys[self.keys_index]: self.item}
+        if self.cur_layer > 0: 
+            self.cur_layer -= 1
+        else:
+            self.cur_layer = (len(self.layer_list) - 1)
         
-    def __display__(self, key, item):
+        print("Cur layer id: ", self.cur_layer)
+        self.clear()
+        self.group.append(self.layers[self.layer_list[self.cur_layer]])
+        print("Cur layer key: ", self.layer_list[self.cur_layer])
+        return {self.layer_list[self.cur_layer]: self.content[self.layer_list[self.cur_layer]]}
+
+    def clear(self):
+        while len(self.group) > 0:
+            del self.group[0]
+        
+    def __add_layer__(self, key, item):
         print("key {}, item: {}".format(key,item))
         self.SCROLLING = False
-        # Clear the display
-        self.clear()
+        layer = None 
+        background = None
         for k in item.keys():
             if k in self.display_types:
                 if k == "text":
-                    self.add_label(
+                    background = self.make_background(item['bg'])
+                    layer = self.__make_Label__(
                         item[k], 
-                        fg=self.parse_color(item['fg']), 
-                        bg=self.parse_color(item['bg'])
+                        fg=int(item['fg'],16), 
+                        bg=None
                     )
                 if k == "stext":
                     self.scroll_rate = float(item['rate'] if "rate" in item.keys() else .1)
-                    self.add_label(
+                    background = self.make_background(item['bg'])
+                    print("background: ", item['bg'])
+                    layer = self.__make_Label__(
                         item[k], 
-                        fg=self.parse_color(item['fg']), 
-                        bg=self.parse_color(item['bg'])
+                        fg=int(item['fg'],16), 
+                        bg=None
                     )
                     self.SCROLLING = True
                 elif k == "img":
-                    self.add_image(item[k])
+                    background = self.__make_TileGroup__(item[k])
+                g = self.____make_Group____(background)
+                if (layer is not None):
+                    g.append(layer)
+                self.layers[key] = g
 
-    def parse_color(self, color):
+    def make_background(self, color):
         if color.startswith("0x"):
-            return int(color,16)
+            palette = displayio.Palette(1)
+            palette[0] = int(color,16)
+            bitmap = displayio.Bitmap(display.width, display.height, 1)
+            tg = displayio.TileGrid(pixel_shader=palette, bitmap=bitmap)
+            return tg
         elif color[-4:] == ".bmp":
-            return color
-        else:
-            return 0x000000
+            return self.__make_TileGroup__(color)
 
     def clear(self):
         while len(self.group) > 0:
@@ -160,21 +188,15 @@ class Billboard:
 billboard = Billboard('content.json')
 
 
-def get_cur(): 
-    c = {billboard.cur: billboard.content[billboard.keys[billboard.cur]]}
-    return c
-
 def live_msg(text, fg, bg):  
     print("text received")
     return parse_content(text,fg,bg)
 
-def next():  
-    print("next screen")
+def next():
     return billboard.next()
 
 
-def prev():  
-    print("prev screen")
+def prev():
     return billboard.prev()
 
 def parse_content(text=None,fg=None,bg=None,*):
@@ -208,12 +230,10 @@ def display_change():
     global debounce_timeout
     if time.monotonic() > cur_debounce:
         if not up_btn.value:
-            print("next ...")
-            billboard.next()
+            print(billboard.next())
 
         if not down_btn.value:
-            print("prev ...")
-            billboard.prev()
+            print(billboard.prev())
 
         # reset debounce clock
         cur_debounce = time.monotonic() + debounce_timeout
@@ -223,23 +243,23 @@ def display_change():
 
 do_scroll = time.monotonic() + billboard.scroll_rate
 while True:
-    display_change()
-    # ble.start_advertising(advertisement)
-    # print("waiting to connect")
-    # while not ble.connected:
-    #     pass
-    # print("connected: trying to read input")
-    # while ble.connected:
-    #     # Returns b'' if nothing was read.
-    #     one_byte = uart.read(1)
-    #     if one_byte:
-    #         #print(one_byte)
-    #         #uart.write(one_byte)
-    #         if one_byte == 'n':
-    #             print(next())
-    #         if one_byte == 'p':
-    #             print(prev())
-    #         display_change()
+    ble.start_advertising(advertisement)
+    print("waiting to connect")
+    while not ble.connected:
+        display_change()
+        pass
+    print("connected: trying to read input")
+    while ble.connected:
+        # Returns b'' if nothing was read.
+        one_byte = uart.read(1)
+        if one_byte:
+            print(one_byte)
+            #uart.write(one_byte)
+            if one_byte == b'n':
+                uart.write(json.dumps(billboard.next()).encode('utf-8'))
+            if one_byte == b'p':
+                uart.write(json.dumps(billboard.prev()).encode('utf-8'))
+        display_change()
     #FIXME: scrolling needs additional logic for functioning 
     # regardless of whether ble is connected or not
     if billboard.SCROLLING == True:

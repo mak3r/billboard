@@ -21,7 +21,7 @@
 	},
 	"file-bg-example": {
 		"text" : "GEEKO",
-		"fg" : "0xFFFFFF",
+		"fg" : "0xAA3311",
 		"bg" : "images/geeko.bmp"
 	},
 	"in-meeting": {
